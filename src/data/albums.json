@@ -1,0 +1,121 @@
+{
+  "name": "Arquivo de escuta",
+  "version": 2,
+  "albums": [
+    {
+      "id": "guns-n-roses-appetite",
+      "title": "Appetite for Destruction",
+      "shortTitle": "Appetite",
+      "artist": "Guns N' Roses",
+      "year": 1987,
+      "color": "#171419",
+      "accent": "#ed2447",
+      "ink": "#f7d879",
+      "cover": "/covers/guns-n-roses-appetite.jpg",
+      "tracks": [
+        { "title": "Paradise City", "src": "/audio/guns-n-roses/01-paradise-city.mp3", "duration": "6:46" },
+        { "title": "Welcome to the Jungle", "src": "/audio/guns-n-roses/02-welcome-to-the-jungle.mp3", "duration": "4:33" }
+      ]
+    },
+    {
+      "id": "acdc-back-in-black",
+      "title": "Back in Black",
+      "shortTitle": "Back in Black",
+      "artist": "AC/DC",
+      "year": 1980,
+      "color": "#17181d",
+      "accent": "#d8d9dc",
+      "ink": "#f3f3ee",
+      "cover": "/covers/acdc-back-in-black.jpg",
+      "tracks": [
+        { "title": "Back in Black", "src": "/audio/acdc/01-back-in-black.mp3", "duration": "4:15" },
+        { "title": "Shoot to Thrill", "src": "/audio/acdc/02-shoot-to-thrill.mp3", "duration": "5:17" },
+        { "title": "Hells Bells", "src": "/audio/acdc/03-hells-bells.mp3", "duration": "5:12" }
+      ]
+    },
+    {
+      "id": "taylor-swift-reputation",
+      "title": "reputation",
+      "shortTitle": "reputation",
+      "artist": "Taylor Swift",
+      "year": 2017,
+      "color": "#d5d1ca",
+      "accent": "#26262b",
+      "ink": "#18181c",
+      "cover": "/covers/taylor-reputation.jpg",
+      "tracks": [
+        { "title": "Look What You Made Me Do", "src": "/audio/taylor-swift/01-look-what-you-made-me-do.mp3", "duration": "3:31" }
+      ]
+    },
+    {
+      "id": "ed-sheeran-x",
+      "title": "x / Multiply",
+      "shortTitle": "x / Multiply",
+      "artist": "Ed Sheeran",
+      "year": 2014,
+      "color": "#24d765",
+      "accent": "#07130c",
+      "ink": "#07130c",
+      "cover": "/covers/ed-sheeran-x.jpg",
+      "tracks": [
+        { "title": "Don't", "src": "/audio/ed-sheeran/01-dont.mp3", "duration": "3:39" }
+      ]
+    },
+    {
+      "id": "queen-greatest-hits-ii",
+      "title": "Greatest Hits II",
+      "shortTitle": "Greatest Hits II",
+      "artist": "Queen",
+      "year": 1991,
+      "color": "#073d4d",
+      "accent": "#e9ad36",
+      "ink": "#17242a",
+      "cover": "/covers/queen-greatest-hits-ii.jpg",
+      "tracks": [
+        { "title": "Bohemian Rhapsody", "src": "/audio/queen/01-bohemian-rhapsody.mp3", "duration": "5:58" }
+      ]
+    },
+    {
+      "id": "pink-floyd-the-wall",
+      "title": "The Wall",
+      "shortTitle": "The Wall",
+      "artist": "Pink Floyd",
+      "year": 1979,
+      "color": "#e5edf2",
+      "accent": "#ef2939",
+      "ink": "#213d56",
+      "cover": "/covers/pink-floyd-the-wall.jpg",
+      "tracks": [
+        { "title": "Another Brick in the Wall, Pt. 1", "src": "/audio/pink-floyd/01-another-brick-in-the-wall-pt-1.mp3", "duration": "3:12" }
+      ]
+    },
+    {
+      "id": "bon-jovi-greatest-hits",
+      "title": "Greatest Hits",
+      "shortTitle": "Greatest Hits",
+      "artist": "Bon Jovi",
+      "year": 2010,
+      "color": "#121111",
+      "accent": "#e3a631",
+      "ink": "#211813",
+      "cover": "/covers/bon-jovi-greatest-hits.jpg",
+      "tracks": [
+        { "title": "Livin' on a Prayer", "src": "/audio/bon-jovi/01-livin-on-a-prayer.mp3", "duration": "4:11" }
+      ]
+    },
+    {
+      "id": "blue-swede-hooked-on-a-feeling",
+      "title": "Hooked on a Feeling",
+      "shortTitle": "Hooked on a Feeling",
+      "artist": "Blue Swede",
+      "year": 1974,
+      "color": "#f2c928",
+      "accent": "#4f9ed1",
+      "ink": "#17232b",
+      "cover": "/covers/blue-swede-hooked-on-a-feeling.jpg",
+      "tracks": [
+        { "title": "Hooked on a Feeling", "src": "/audio/blue-swede/01-hooked-on-a-feeling.mp3", "duration": "2:48" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,520 @@
+---
+import Layout from '../layouts/Layout.astro';
+import library from '../data/albums.json';
+
+const firstAlbum = library.albums[0];
+const firstTrack = firstAlbum?.tracks[0];
+---
+
+<Layout title="Spotify 3D / estante de fitas">
+	<div id="app" data-catalog={JSON.stringify(library)}>
+		<div id="detail-background" aria-hidden="true">
+			<canvas id="detail-background-canvas"></canvas>
+		</div>
+		<svg id="cassette-cable" aria-hidden="true">
+			<path class="cable-shadow"></path>
+			<path class="cable-main"></path>
+		</svg>
+		<header class="topbar">
+			<a class="brand" href="/" aria-label="Spotify 3D, arquivo de escuta">
+				<span class="brand-mark" aria-hidden="true"><i class="fa-solid fa-cassette-tape"></i></span>
+				<span class="brand-copy">
+					<strong>SPOTIFY 3D</strong>
+					<small>arquivo de fitas · 002</small>
+				</span>
+			</a>
+			<button class="back-button" id="back-button" type="button" aria-label="Voltar para a coleção">
+				<span aria-hidden="true">←</span><span>coleção</span>
+			</button>
+			<div class="topbar-meta">
+				<span class="status-dot"></span>
+				<span>LOCAL MODE</span>
+				<span class="topbar-divider"></span>
+				<span id="clock">00:00:00</span>
+			</div>
+		</header>
+
+		<main class="workspace">
+			<div class="rack-scroll" id="rack-scroll">
+				<div class="stage" id="cassette-rack" aria-label="Coleção de fitas na estante"></div>
+			</div>
+
+			<aside class="now-playing" aria-label="Reprodução atual">
+				<div class="player-shell">
+					<span class="player-jack" id="player-jack" aria-hidden="true"><span class="player-jack-sleeve"></span><span class="player-jack-metal"></span></span><span class="player-jack-port" aria-hidden="true"></span>
+					<div class="ipod-screen">
+						<div class="player-topline">
+							<span>LOCAL DECK <b>02</b></span>
+							<span class="player-state"><i></i><strong id="player-state">PAUSADO</strong></span>
+						</div>
+						<div class="solaris-player">
+							<canvas id="solaris-player-canvas" aria-label="Esfera Solaris reativa à música"></canvas>
+						</div>
+						<div class="player-identity">
+							<figure class="player-cover">
+								<img id="player-cover" src={firstAlbum?.cover} alt={firstAlbum?.title ?? 'Capa do álbum'} />
+							</figure>
+							<div class="player-heading">
+								<span class="player-kicker" id="track-kicker">{firstAlbum?.artist ?? ''}</span>
+								<h2 id="album-name">{firstAlbum?.title ?? ''}</h2>
+								<p><span id="album-year">{firstAlbum?.year ?? ''}</span><span>FITA ORIGINAL · SIDE A</span></p>
+							</div>
+						</div>
+						<div class="now-playing-track">
+							<div><span class="np-label">TOCANDO AGORA</span><span class="np-index">FAIXA <b id="track-number">01</b></span></div>
+							<strong id="track-name">{firstTrack?.title ?? ''}</strong>
+						</div>
+						<div class="track-list-head"><span>FAIXAS DA FITA</span><span id="track-count">00 FAIXAS</span></div>
+						<div class="track-list" id="track-list"></div>
+						<div class="progress-row"><span id="current-time">0:00</span><input id="progress-control" class="progress" type="range" min="0" max="100" value="0" step="0.1" aria-label="Progresso da faixa" /><span id="total-time">{firstTrack?.duration ?? '0:00'}</span></div>
+					</div>
+					<div class="player-controls">
+						<button class="icon-button" id="shuffle-button" type="button" aria-label="Embaralhar playlist" title="Embaralhar playlist"><i class="fa-solid fa-shuffle" aria-hidden="true"></i></button>
+						<button class="icon-button" id="previous-button" type="button" aria-label="Faixa anterior" title="Faixa anterior"><i class="fa-solid fa-backward-step" aria-hidden="true"></i></button>
+						<button class="play-button" id="play-button" type="button" aria-label="Reproduzir" title="Reproduzir"><i class="fa-solid fa-play" aria-hidden="true"></i></button>
+						<button class="icon-button" id="next-button" type="button" aria-label="Próxima faixa" title="Próxima faixa"><i class="fa-solid fa-forward-step" aria-hidden="true"></i></button>
+						<button class="icon-button" id="repeat-button" type="button" aria-label="Repetir faixa" title="Repetir faixa"><i class="fa-solid fa-repeat" aria-hidden="true"></i></button>
+					</div>
+				</div>
+			</aside>
+		</main>
+	</div>
+</Layout>
+
+<script>
+	import { createTapeShelf } from '../scripts/tape-shelf.js';
+	import { SolarisPlayer } from '../scripts/solaris-player.js';
+	import { TapeCable } from '../scripts/tape-cable.js';
+	import { FlutedBackground } from '../scripts/fluted-background.js';
+	import { extractCoverPalette } from '../scripts/color-palette.js';
+
+	const root = document.querySelector('#app');
+	if (!root) throw new Error('Spotify 3D app root not found');
+
+	const catalog = JSON.parse(root.dataset.catalog || '{"albums":[]}');
+	const rack = document.querySelector('#cassette-rack');
+	const backButton = document.querySelector('#back-button');
+	const cassetteCable = document.querySelector('#cassette-cable');
+	const playerJack = document.querySelector('#player-jack');
+	const detailBackgroundCanvas = document.querySelector('#detail-background-canvas');
+	const detailBackground = detailBackgroundCanvas ? new FlutedBackground(detailBackgroundCanvas) : null;
+	const coverPaletteCache = new Map();
+	const albums = catalog.albums || [];
+
+	const playButton = document.querySelector('#play-button');
+	const playIcon = playButton?.querySelector('i');
+	const shuffleButton = document.querySelector('#shuffle-button');
+	const repeatButton = document.querySelector('#repeat-button');
+	const playerCover = document.querySelector('#player-cover');
+	const playerState = document.querySelector('#player-state');
+	const albumYear = document.querySelector('#album-year');
+	const trackNumber = document.querySelector('#track-number');
+	const trackCount = document.querySelector('#track-count');
+	const progressControl = document.querySelector('#progress-control');
+	const audio = new Audio();
+	audio.preload = 'auto';
+	const solarisCanvas = document.querySelector('#solaris-player-canvas');
+	const solarisPlayer = solarisCanvas ? new SolarisPlayer(solarisCanvas) : null;
+	solarisPlayer?.attachAudio(audio);
+
+	let albumIndex = 0;
+	let trackIndex = 0;
+	let isPlaying = false;
+	let shuffleEnabled = false;
+	let repeatEnabled = false;
+	let collectionScrollY = 0;
+	let tapeCable = null;
+
+	const currentAlbum = () => albums[albumIndex];
+	const currentTrack = () => currentAlbum()?.tracks?.[trackIndex];
+
+	function formatTime(seconds) {
+		if (!Number.isFinite(seconds)) return '0:00';
+		return `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
+	}
+
+	function updatePlayer() {
+		const album = currentAlbum();
+		const track = currentTrack();
+		if (!album || !track) return;
+		const kicker = document.querySelector('#track-kicker');
+		const name = document.querySelector('#track-name');
+		const albumName = document.querySelector('#album-name');
+		const total = document.querySelector('#total-time');
+		const trackList = document.querySelector('#track-list');
+		if (playerCover) {
+			playerCover.src = album.cover;
+			playerCover.alt = `Capa de ${album.title}`;
+		}
+		if (playerState) playerState.textContent = isPlaying ? 'TOCANDO' : 'PAUSADO';
+		if (albumYear) albumYear.textContent = album.year || '';
+		if (trackNumber) trackNumber.textContent = String(trackIndex + 1).padStart(2, '0');
+		if (trackCount) trackCount.textContent = `${String(album.tracks.length).padStart(2, '0')} FAIXAS`;
+		if (kicker) kicker.textContent = album.artist;
+		if (name) name.textContent = track.title;
+		if (albumName) albumName.textContent = album.title;
+		if (total) total.textContent = track.duration || '0:00';
+		if (progressControl && !audio.duration) progressControl.value = '0';
+		if (playIcon) {
+			playIcon.classList.toggle('fa-play', !isPlaying);
+			playIcon.classList.toggle('fa-pause', isPlaying);
+		}
+		if (playButton) {
+			playButton.setAttribute('aria-label', isPlaying ? 'Pausar' : 'Reproduzir');
+			playButton.title = isPlaying ? 'Pausar' : 'Reproduzir';
+		}
+		shuffleButton?.classList.toggle('is-active', shuffleEnabled);
+		repeatButton?.classList.toggle('is-active', repeatEnabled);
+		shelf?.setPlayback(albumIndex, isPlaying);
+		if (trackList) trackList.innerHTML = album.tracks.map((item, index) => `<button type="button" class="track-row ${index === trackIndex ? 'is-active' : ''}" data-track-index="${index}"><span>${String(index + 1).padStart(2, '0')}</span><strong>${item.title}</strong><small>${item.duration || '—'}</small></button>`).join('');
+		trackList?.querySelectorAll('[data-track-index]').forEach((row) => row.addEventListener('click', () => {
+			trackIndex = Number(row.dataset.trackIndex);
+			loadTrack(true);
+		}));
+	}
+
+	function loadTrack(shouldPlay = false) {
+		const track = currentTrack();
+		if (!track) return;
+		audio.src = track.src;
+		audio.load();
+		if (shouldPlay) {
+			Promise.resolve(solarisPlayer?.prepareAudio())
+				.then(() => audio.play())
+				.then(() => {
+					isPlaying = true;
+					updatePlayer();
+				})
+				.catch((err) => {
+					console.warn('Playback error:', err);
+					isPlaying = false;
+					updatePlayer();
+				});
+		} else {
+			isPlaying = false;
+			updatePlayer();
+		}
+	}
+
+	async function syncCoverPalette(album) {
+		if (!album?.cover) return;
+		let palette = coverPaletteCache.get(album.cover);
+		if (!palette) {
+			palette = await extractCoverPalette(album.cover, {
+				top: album.accent || album.color || '#ff6b3d',
+				bottom: album.color || '#3366ff',
+				accent: album.accent || '#f4b45d',
+			});
+			coverPaletteCache.set(album.cover, palette);
+		}
+		if (currentAlbum() !== album) return;
+		detailBackground?.setPalette(palette);
+		solarisPlayer?.setPalette(palette);
+		root.style.setProperty('--tint', palette.accent);
+	}
+
+	function openAlbum(index, { pushUrl = true, autoplay = true } = {}) {
+		if (!root.classList.contains('mode-detail')) {
+			collectionScrollY = window.scrollY;
+		}
+		albumIndex = index;
+		trackIndex = 0;
+		isPlaying = false;
+		audio.pause();
+		solarisPlayer?.setPlaying(false);
+		audio.currentTime = 0;
+		root.classList.add('mode-detail');
+		detailBackground?.setActive(true);
+		solarisPlayer?.setActive(true);
+		tapeCable?.setActive(true);
+		root.style.setProperty('--tint', currentAlbum()?.color || '#886644');
+		syncCoverPalette(currentAlbum());
+		shelf?.enter(index);
+		loadTrack(autoplay);
+		if (pushUrl) {
+			const id = currentAlbum()?.id;
+			if (id) history.pushState({ album: id }, '', `?fita=${id}`);
+		}
+	}
+
+	function closeAlbum({ pushUrl = true } = {}) {
+		detailBackground?.setActive(false);
+		solarisPlayer?.setActive(false);
+		tapeCable?.setActive(false);
+		root.classList.remove('mode-detail');
+		shelf?.exit();
+		requestAnimationFrame(() => {
+			window.scrollTo({ top: collectionScrollY, left: 0, behavior: 'auto' });
+		});
+		if (pushUrl) history.pushState({}, '', location.pathname);
+	}
+
+	const shelf = rack && albums.length
+		? createTapeShelf({ container: rack, albums, onSelect: openAlbum, layout: 'shelf' })
+		: null;
+
+	if (shelf && cassetteCable && playerJack) {
+		tapeCable = new TapeCable({
+			svg: cassetteCable,
+			getTapeAnchor: () => shelf.getFocusedCableAnchor(),
+			getPlayerAnchor: () => {
+				const rect = playerJack.getBoundingClientRect();
+				return { x: rect.left + rect.width / 2, y: rect.top + 2 };
+			},
+		});
+	}
+
+	window.addEventListener('pagehide', (event) => {
+		if (!event.persisted) {
+			shelf?.destroy();
+			detailBackground?.destroy();
+			solarisPlayer?.destroy();
+			tapeCable?.destroy();
+		}
+	}, { once: true });
+
+	backButton?.addEventListener('click', () => closeAlbum());
+
+	window.addEventListener('popstate', () => {
+		const requested = new URLSearchParams(location.search).get('fita');
+		const index = requested ? albums.findIndex((album) => album.id === requested) : -1;
+		if (index >= 0) openAlbum(index, { pushUrl: false, autoplay: false });
+		else closeAlbum({ pushUrl: false });
+	});
+
+	const initialId = new URLSearchParams(location.search).get('fita');
+	const initialIndex = initialId ? albums.findIndex((album) => album.id === initialId) : -1;
+	if (initialIndex >= 0) openAlbum(initialIndex, { pushUrl: false, autoplay: false });
+
+	function updateClock() {
+		const clock = document.querySelector('#clock');
+		if (clock) clock.textContent = new Date().toLocaleTimeString('pt-BR', { hour12: false });
+	}
+
+	setInterval(updateClock, 1000);
+	updateClock();
+
+	playButton?.addEventListener('click', () => {
+		if (!audio.src || audio.src === '' || audio.src === window.location.href) {
+			loadTrack(true);
+			return;
+		}
+		if (isPlaying) {
+			audio.pause();
+		} else {
+			Promise.resolve(solarisPlayer?.prepareAudio())
+				.then(() => audio.play())
+				.then(() => {
+					isPlaying = true;
+					updatePlayer();
+				})
+				.catch((err) => {
+					console.warn('Playback error:', err);
+					isPlaying = false;
+					updatePlayer();
+				});
+		}
+	});
+
+	audio.addEventListener('play', () => {
+		isPlaying = true;
+		solarisPlayer?.setPlaying(true);
+		updatePlayer();
+	});
+
+	audio.addEventListener('pause', () => {
+		isPlaying = false;
+		solarisPlayer?.setPlaying(false);
+		updatePlayer();
+	});
+
+	function getNextTrackIndex() {
+		const length = currentAlbum()?.tracks?.length || 1;
+		if (!shuffleEnabled || length < 2) return (trackIndex + 1) % length;
+		let next = trackIndex;
+		while (next === trackIndex) next = Math.floor(Math.random() * length);
+		return next;
+	}
+
+	document.querySelector('#next-button')?.addEventListener('click', () => {
+		trackIndex = getNextTrackIndex();
+		loadTrack(isPlaying);
+	});
+
+	document.querySelector('#previous-button')?.addEventListener('click', () => {
+		trackIndex = (trackIndex - 1 + (currentAlbum()?.tracks?.length || 1)) % (currentAlbum()?.tracks?.length || 1);
+		loadTrack(isPlaying);
+	});
+
+	shuffleButton?.addEventListener('click', () => {
+		shuffleEnabled = !shuffleEnabled;
+		updatePlayer();
+	});
+
+	repeatButton?.addEventListener('click', () => {
+		repeatEnabled = !repeatEnabled;
+		audio.loop = repeatEnabled;
+		updatePlayer();
+	});
+
+	audio.addEventListener('timeupdate', () => {
+		const current = document.querySelector('#current-time');
+		if (progressControl) progressControl.value = audio.duration ? String((audio.currentTime / audio.duration) * 100) : '0';
+		if (current) current.textContent = formatTime(audio.currentTime);
+	});
+
+	progressControl?.addEventListener('input', () => {
+		if (Number.isFinite(audio.duration) && audio.duration > 0) {
+			audio.currentTime = (Number(progressControl.value) / 100) * audio.duration;
+		}
+	});
+
+	audio.addEventListener('ended', () => {
+		trackIndex = getNextTrackIndex();
+		loadTrack(true);
+	});
+
+	updatePlayer();
+</script>
+
+<style is:global>
+	html { background: #201819; }
+	body { min-width: 0; margin: 0; background: #201819; color: #f1eadf; font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace; }
+	* { box-sizing: border-box; }
+	button { font: inherit; }
+
+	#app { --tint: #886644; position: relative; min-height: 100svh; overflow-x: clip; background: #201819; transition: background 1.1s ease; }
+	#app.mode-detail { background: transparent; }
+	#detail-background { position: fixed; z-index: 0; inset: 0; overflow: hidden; opacity: 0; pointer-events: none; transition: opacity .8s ease; }
+	#detail-background canvas { display: block; width: 100%; height: 100%; filter: brightness(.86) saturate(.96) contrast(1.02); }
+	#app.mode-detail #detail-background { opacity: 1; }
+	#app.mode-detail::after { position: fixed; z-index: 1; inset: 0; background: radial-gradient(ellipse 58% 70% at 50% 53%, transparent 38%, rgba(5,6,8,.035) 66%, rgba(4,5,7,.16) 100%); content: ''; pointer-events: none; }
+
+	.workspace, .topbar { position: relative; z-index: 2; }
+
+	.topbar { display: flex; align-items: center; justify-content: space-between; height: 88px; padding: 0 clamp(24px, 4.7vw, 78px); border-bottom: 1px solid rgba(255, 236, 204, .13); }
+	#app:not(.mode-detail) .topbar { border-bottom-color: transparent; background: linear-gradient(180deg, rgba(20, 15, 14, .38), transparent); position: absolute; top: 0; right: 0; left: 0; z-index: 5; }
+	#app:not(.mode-detail) .brand, #app:not(.mode-detail) .topbar-meta { opacity: 1; pointer-events: auto; }
+	#app.mode-detail .topbar { border-bottom-color: rgba(255,255,255,.17); background: linear-gradient(180deg, rgba(5,6,8,.76), rgba(5,6,8,.25)); box-shadow: 0 8px 28px rgba(0,0,0,.25); backdrop-filter: blur(12px); }
+
+	.brand { display: flex; align-items: center; gap: 12px; color: #f2eadc; text-decoration: none; }
+	.brand-mark { display: grid; place-items: center; width: 42px; height: 42px; border: 1px solid rgba(235, 198, 145, .65); border-radius: 50%; color: #221916; background: #dca262; box-shadow: 0 0 0 4px rgba(220, 162, 98, .1), inset 0 0 0 2px rgba(255, 241, 212, .2); font-size: 18px; transform: rotate(-5deg); transition: transform .25s ease, box-shadow .25s ease; }
+	.brand:hover .brand-mark { box-shadow: 0 0 0 7px rgba(220, 162, 98, .13), inset 0 0 0 2px rgba(255, 241, 212, .25); transform: rotate(4deg) scale(1.04); }
+	.brand-copy strong, .brand-copy small { display: block; }
+	.brand-copy strong { color: #f3e7d1; font: 700 23px/.78 "Fraunces", Georgia, serif; letter-spacing: .035em; }
+	.brand-copy small { margin-top: 8px; color: #d8ccba; font: 8px/1 "JetBrains Mono", monospace; letter-spacing: .18em; text-transform: uppercase; }
+	.topbar-meta { display: flex; align-items: center; gap: 10px; color: #dbd5cc; font: 9px "JetBrains Mono", monospace; letter-spacing: .17em; text-shadow: 0 1px 3px #000; }
+	.status-dot { width: 6px; height: 6px; border-radius: 50%; background: #c7ec7b; box-shadow: 0 0 12px #a8c66c; }
+	.topbar-divider { width: 1px; height: 17px; margin: 0 8px; background: rgba(255,255,255,.35); }
+
+	.back-button { display: none; align-items: center; gap: 9px; padding: 9px 16px 9px 12px; border: 1px solid rgba(245,232,210,.58); border-radius: 999px; color: #fff6e7; background: rgba(5,6,8,.52); box-shadow: 0 4px 12px rgba(0,0,0,.28); font: 10px monospace; letter-spacing: .12em; text-transform: uppercase; cursor: pointer; transition: border-color .2s, color .2s; }
+	.back-button span:first-child { font-size: 13px; }
+	.back-button:hover { border-color: #e0a05b; color: #e5a05b; }
+	#app.mode-detail .back-button { display: inline-flex; }
+
+	.side-rail { position: fixed; z-index: 6; top: 50%; left: 34px; display: flex; flex-direction: column; gap: 10px; align-items: center; transform: translateY(-50%); }
+	.rail-marker { display: block; width: 16px; height: 2px; background: #6d6660; opacity: .7; }
+	.rail-marker.is-active { width: 17px; background: #f1eadf; opacity: 1; }
+	.rail-divider { width: 1px; height: 17px; margin-top: 4px; background: #4e4945; }
+	.rail-symbol { margin-top: 245px; color: #d4cbc0; font: 20px Georgia, serif; }
+	.mode-detail .side-rail { opacity: 0; pointer-events: none; }
+
+	.workspace { max-width: 1510px; margin: 0 auto; }
+	#app:not(.mode-detail) .workspace { max-width: none; padding: 0; }
+	#app:not(.mode-detail) .now-playing { display: none; }
+	#app.mode-detail .workspace { display: grid; grid-template-columns: 1.15fr .85fr; gap: clamp(30px, 4.4vw, 72px); align-items: center; min-height: calc(100svh - 162px); padding: clamp(30px, 6vh, 64px) clamp(24px, 4.7vw, 78px); }
+
+	.rack-scroll { position: relative; }
+	#app:not(.mode-detail) .rack-scroll { height: 100svh; }
+	#app.mode-detail .rack-scroll { height: auto; }
+
+	.stage { position: relative; width: 100%; }
+	#app:not(.mode-detail) .stage { position: sticky; top: 0; height: 100svh; }
+	#app.mode-detail .stage::before { position: absolute; top: 50%; left: 50%; z-index: 0; width: 82%; height: 61%; border-radius: 50%; background: radial-gradient(ellipse at center, rgba(0,0,0,.18) 0%, rgba(0,0,0,.1) 39%, color-mix(in srgb, var(--tint) 36%, transparent) 57%, transparent 76%); content: ''; filter: blur(52px); opacity: .58; pointer-events: none; transform: translate(-50%, -50%); }
+	#app.mode-detail .stage::after { position: absolute; right: 5%; bottom: 8%; z-index: 3; padding: 7px 10px; border: 1px solid rgba(255,255,255,.18); border-radius: 999px; color: #f0e8da; background: rgba(4,5,7,.6); box-shadow: 0 4px 13px rgba(0,0,0,.35); content: 'ARRASTE PARA GIRAR'; font: 9px monospace; letter-spacing: .16em; }
+	#app.mode-detail .stage canvas { position: relative; z-index: 1; touch-action: none; filter: drop-shadow(0 30px 30px rgba(0, 0, 0, .72)) drop-shadow(0 0 20px rgba(0,0,0,.38)); }
+	#app.mode-detail .stage { height: clamp(440px, 70vh, 720px); overflow: visible; }
+
+	#cassette-cable { position: fixed; z-index: 1; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; opacity: 0; transition: opacity .45s ease; }
+	#cassette-cable.is-active { opacity: 1; }
+	.cable-shadow { fill: none; stroke: rgba(0, 0, 0, .52); stroke-linecap: round; stroke-width: 7px; filter: blur(2px); }
+	.cable-main { fill: none; stroke: #f4f0e8; stroke-linecap: round; stroke-width: 3.5px; filter: drop-shadow(0 1px 0 rgba(255,255,255,.7)) drop-shadow(0 5px 5px rgba(0,0,0,.5)); }
+
+	.now-playing { display: flex; flex-direction: column; align-items: center; min-width: 0; }
+	.player-shell { --jack-left: 84%; position: relative; width: min(100%, 390px); padding: 18px 18px 25px; border: 1px solid #080808; border-radius: 38px; background: linear-gradient(115deg, #161617 0%, #4b4b4e 17%, #252527 45%, #101011 100%); box-shadow: inset 1px 1px 1px rgba(255,255,255,.24), inset -6px -7px 16px rgba(0,0,0,.58), 0 34px 64px rgba(0,0,0,.7), 0 0 0 1px rgba(255,255,255,.12); }
+	.player-shell::before { position: absolute; inset: 7px; border: 1px solid rgba(255,255,255,.14); border-radius: 32px; content: ''; pointer-events: none; }
+
+	.player-jack { position: absolute; z-index: 4; top: -39px; left: var(--jack-left); width: 18px; height: 45px; pointer-events: none; }
+	.player-jack-sleeve { position: absolute; top: 0; left: 1px; width: 16px; height: 20px; border: 1px solid #d5d4d0; border-radius: 4px 4px 2px 2px; background: linear-gradient(90deg, #dad9d5, #fff 42%, #d4d3cf); box-shadow: 0 2px 3px rgba(0,0,0,.38), inset 1px 0 rgba(255,255,255,.75); }
+	.player-jack-metal { position: absolute; top: 18px; left: 4px; width: 10px; height: 28px; border: 1px solid #d4d3cf; border-radius: 2px 2px 1px 1px; background: linear-gradient(90deg, #d8d7d3, #fff 45%, #d2d1cd); box-shadow: 1px 1px 2px rgba(0,0,0,.42); }
+	.player-jack-port { position: absolute; z-index: 6; top: -3px; left: calc(var(--jack-left) - 2px); width: 22px; height: 10px; border: 1px solid #070708; border-radius: 4px 4px 2px 2px; background: linear-gradient(180deg, #070708, #29292b 58%, #111113); box-shadow: inset 0 1px rgba(255,255,255,.18), 0 1px 2px rgba(0,0,0,.65); pointer-events: none; }
+
+	.ipod-screen { position: relative; z-index: 1; overflow: hidden; padding: 14px 14px 13px; border: 4px solid #101011; border-radius: 15px; background: radial-gradient(ellipse at 50% 0%, rgba(68,68,72,.42), transparent 46%), linear-gradient(155deg, #111215, #050506 72%); box-shadow: inset 0 0 0 1px rgba(255,255,255,.16), inset 0 12px 22px rgba(255,255,255,.025), 0 2px 2px rgba(255,255,255,.16); }
+	.ipod-screen::after { position: absolute; top: -46%; left: 9%; width: 35%; height: 130%; background: linear-gradient(110deg, transparent 15%, rgba(255,255,255,.12) 49%, transparent 51%); content: ''; opacity: .45; pointer-events: none; transform: rotate(-14deg); }
+
+	.player-topline { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,.11); color: #8b8d92; font: 8px monospace; letter-spacing: .13em; }
+	.player-topline b { color: #d9d9d7; font-weight: 400; }
+	.player-state { display: inline-flex; align-items: center; gap: 6px; color: #d8ded5; }
+	.player-state i { width: 5px; height: 5px; border-radius: 50%; background: #a8c66c; box-shadow: 0 0 8px #a8c66c; }
+	.solaris-player { position: relative; z-index: 1; height: 142px; margin: 0 -4px -5px; overflow: hidden; }
+	.solaris-player canvas { display: block; width: 100%; height: 100%; }
+	.player-identity { position: relative; z-index: 1; display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 11px; align-items: center; padding: 11px 0 10px; }
+	.player-cover { width: 54px; aspect-ratio: 1; margin: 0; overflow: hidden; border: 1px solid #7b7d81; border-radius: 4px; background: #050506; box-shadow: 0 3px 7px rgba(0,0,0,.55); }
+	.player-cover img { display: block; width: 100%; height: 100%; object-fit: cover; }
+	.player-heading { min-width: 0; }
+	.player-kicker { display: block; overflow: hidden; color: #a7a8ab; font: 8px monospace; letter-spacing: .11em; text-overflow: ellipsis; white-space: nowrap; text-transform: uppercase; }
+	.player-heading h2 { margin: 4px 0 0; overflow: hidden; color: #f1f0ec; font: 600 20px/.98 "Fraunces", Georgia, serif; letter-spacing: -.025em; text-overflow: ellipsis; }
+	.player-heading p { display: flex; flex-wrap: wrap; gap: 8px; margin: 7px 0 0; color: #86878b; font: 7px monospace; letter-spacing: .08em; }
+	.player-heading p span:first-child { color: #d7d7d4; }
+	.now-playing-track { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 5px; padding: 10px 0; border-top: 1px solid rgba(255,255,255,.12); border-bottom: 1px solid rgba(255,255,255,.09); }
+	.now-playing-track > div, .track-list-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+	.np-label, .track-list-head { color: #a7a9ad; font: 7px monospace; letter-spacing: .12em; }
+	.np-index, .track-list-head span:last-child { color: #75767a; font: 7px monospace; letter-spacing: .08em; }
+	.np-index b { color: #d8d8d5; font-weight: 400; }
+	.now-playing-track strong { overflow: hidden; color: #f1f0ed; font: 500 15px/1.1 "Fraunces", Georgia, serif; font-style: italic; letter-spacing: -.01em; text-overflow: ellipsis; white-space: nowrap; }
+	.track-list-head { position: relative; z-index: 1; margin-top: 10px; padding-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,.08); color: #93959a; }
+	.track-list { position: relative; z-index: 1; display: grid; gap: 3px; margin-top: 5px; max-height: 83px; overflow-y: auto; padding-right: 2px; }
+	.track-row { display: grid; grid-template-columns: 18px minmax(0, 1fr) 32px; gap: 5px; align-items: center; min-width: 0; padding: 6px 5px; border: 0; border-radius: 2px; color: #aaa9a8; background: transparent; cursor: pointer; text-align: left; transition: background .2s, color .2s; }
+	.track-row:hover, .track-row.is-active { color: #fff; background: rgba(255,255,255,.11); box-shadow: none; }
+	.track-row span { color: #77787c; font-size: 7px; }
+	.track-row strong { overflow: hidden; font: 400 11px/1 "Fraunces", Georgia, serif; text-overflow: ellipsis; white-space: nowrap; }
+	.track-row small { color: #85868a; font-size: 7px; text-align: right; opacity: .9; }
+	.progress-row { position: relative; z-index: 1; display: grid; grid-template-columns: 28px 1fr 28px; gap: 7px; align-items: center; margin-top: 9px; color: #9c9da0; font: 7px monospace; }
+	.progress { width: 100%; height: 12px; margin: 0; appearance: none; cursor: pointer; background: transparent; }
+	.progress::-webkit-slider-runnable-track { height: 2px; border: 0; background: #535458; }
+	.progress::-moz-range-track { height: 2px; border: 0; background: #535458; }
+	.progress::-webkit-slider-thumb { width: 7px; height: 7px; margin-top: -2px; appearance: none; border: 1px solid #bfc0c3; border-radius: 50%; background: #dedede; box-shadow: 0 1px 2px #000; }
+	.progress::-moz-range-thumb { width: 6px; height: 6px; border: 1px solid #bfc0c3; border-radius: 50%; background: #dedede; }
+
+	.player-controls { position: relative; z-index: 1; width: 202px; height: 202px; margin: 23px auto 0; border: 1px solid #101011; border-radius: 50%; background: radial-gradient(circle at 50% 50%, #303033 0 21%, #171719 22% 23%, transparent 24%), radial-gradient(circle at 32% 22%, #616166, #2f2f32 49%, #171719 100%); box-shadow: inset 2px 3px 5px rgba(255,255,255,.16), inset -5px -7px 9px rgba(0,0,0,.38), 0 7px 12px rgba(0,0,0,.28); }
+	.icon-button, .play-button { position: absolute; z-index: 2; display: grid; place-items: center; border: 0; color: #e9e9e7; background: transparent; cursor: pointer; text-shadow: 0 1px 1px #000; transition: color .2s, transform .2s; }
+	.icon-button:hover, .play-button:hover { color: #fff; transform: scale(1.11); }
+	.icon-button.is-active { color: #f2bd6e; text-shadow: 0 0 10px rgba(242,189,110,.5); }
+	.icon-button { width: 43px; height: 35px; font-size: 14px; }
+	.play-button { width: 54px; height: 54px; border: 1px solid rgba(255,255,255,.1); border-radius: 50%; color: #f3f3f0; background: radial-gradient(circle at 34% 26%, #545458, #202023 68%, #151517); box-shadow: inset 1px 2px 3px rgba(255,255,255,.16), 0 3px 7px rgba(0,0,0,.4); font-size: 17px; }
+	#shuffle-button { top: 8px; left: 50%; transform: translateX(-50%); font-size: 13px; }
+	#previous-button { top: 50%; left: 8px; transform: translateY(-50%); }
+	#next-button { top: 50%; right: 8px; transform: translateY(-50%); }
+	#play-button { top: 50%; left: 50%; transform: translate(-50%, -50%); }
+	#repeat-button { bottom: 8px; left: 50%; transform: translateX(-50%); font-size: 13px; }
+	#shuffle-button:hover, #repeat-button:hover { transform: translateX(-50%) scale(1.11); }
+	#previous-button:hover { transform: translateY(-50%) scale(1.11); }
+	#next-button:hover { transform: translateY(-50%) scale(1.11); }
+	#play-button:hover { transform: translate(-50%, -50%) scale(1.08); }
+
+	@media (max-width: 900px) {
+		#app.mode-detail .workspace { display: block; }
+		#app.mode-detail .stage { height: 380px; margin-bottom: 28px; }
+	}
+
+	@media (max-width: 720px) {
+		.topbar { height: 72px; padding: 0 20px; }
+		.topbar-meta span:not(.status-dot):not(:last-child) { display: none; }
+		#app.mode-detail .workspace { padding: 30px 20px 40px; }
+		.player-shell { padding: 18px; }
+		.solaris-player { height: 164px; }
+		.player-identity { grid-template-columns: 62px minmax(0, 1fr); gap: 14px; padding: 20px 0 17px; }
+		.player-cover { width: 62px; }
+		.player-heading h2 { font-size: 27px; }
+	}
+</style>
